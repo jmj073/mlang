@@ -91,7 +91,7 @@ class FunctionValue:
         while True:
             try:
                 # 함수 본문 실행; 이때 env는 재사용됨.
-                return interpreter.execute(self.node.body, env)
+                return interpreter.execute(lambda v: v, self.node.body, env)
             except TailCall as tc:
                 if tc.func is not self:
                     # 다른 함수에 대한 호출이면 예외를 전파
@@ -105,8 +105,11 @@ class FunctionValue:
 class Interpreter:
     def __init__(self):
         self.global_env = Environment()
+        
+    def exec(self, node, env=None):
+        return self.execute(lambda v: v, node, env)
 
-    def execute(self, node, env=None):
+    def execute(self, K, node, env=None):
         if env is None:
             env = self.global_env
 
@@ -114,71 +117,76 @@ class Interpreter:
         method = getattr(self, method_name, None)
         if method is None:
             raise NotImplementedError(f"No method visit_{type(node).__name__}")
-        return method(node, env)
+        return method(K, node, env)
 
-    def visit_LiteralNode(self, node, env):
-        return node.value
+    def visit_LiteralNode(self, K, node, env):
+        return K(node.value)
 
-    def visit_VarNode(self, node, env):
-        return env.get(node.name)
+    def visit_VarNode(self, K, node, env):
+        return K(env.get(node.name))
 
-    def visit_AssignNode(self, node, env):
-        value = self.execute(node.value, env)
-        # 이미 변수 "x"가 존재하면 상위 환경에서 업데이트하고,
-        # 없으면 현재 환경에 설정
-        try:
-            env.update(node.name, value)
-        except NameError:
-            env.set(node.name, value)
-        return value
+    def visit_AssignNode(self, K, node, env):
+        def cont(value):
+            # 이미 변수 "x"가 존재하면 상위 환경에서 업데이트하고,
+            # 없으면 현재 환경에 설정
+            try:
+                env.update(node.name, value)
+            except NameError:
+                env.set(node.name, value)
+            return value
+        return self.execute(lambda v: K(cont(v)), node.value, env)
 
-    def visit_BinaryOpNode(self, node, env):
-        left = self.execute(node.left, env)
-        right = self.execute(node.right, env)
-        if node.op == "+":
-            return left + right
-        elif node.op == "-":
-            return left - right
-        elif node.op == "*":
-            return left * right
-        elif node.op == "/":
-            return left / right
-        elif node.op == "<":
-            return left < right
-        elif node.op == ">":
-            return left > right
-        elif node.op == "==":
-            return left == right
-        elif node.op == "!=":
-            return left != right
-        else:
-            raise ValueError(f"Unknown operator: {node.op}")
+    def visit_BinaryOpNode(self, K, node, env):
+        def cont1(left):
+            def cont2(right):
+                if node.op == "+":
+                    return left + right
+                elif node.op == "-":
+                    return left - right
+                elif node.op == "*":
+                    return left * right
+                elif node.op == "/":
+                    return left / right
+                elif node.op == "<":
+                    return left < right
+                elif node.op == ">":
+                    return left > right
+                elif node.op == "==":
+                    return left == right
+                elif node.op == "!=":
+                    return left != right
+                else:
+                    raise ValueError(f"Unknown operator: {node.op}")
+            return self.execute(lambda v: K(cont2(v)), node.right, env)
+        return self.execute(cont1, node.left, env)
 
-    def visit_IfNode(self, node, env):
-        cond = self.execute(node.cond, env)
-        if cond:
-            return self.execute(node.then_body, env)
-        elif node.else_body:
-            return self.execute(node.else_body, env)
-        return None
+    def visit_IfNode(self, K, node, env):
+        def cont(cond):
+            if cond:
+                return self.execute(K, node.then_body, env)
+            elif node.else_body:
+                return self.execute(K, node.else_body, env)
+            return None
+        return self.execute(cont, node.cond, env)
 
-    def visit_FunctionNode(self, node, env):
+    def visit_FunctionNode(self, K, node, env):
         func = FunctionValue(node, env)
         env.set(node.name, func)
-        return func
+        return K(func)
 
-    def visit_FunctionCallNode(self, node, env):
-        func = self.execute(node.func, env)
-        args = [self.execute(arg, env) for arg in node.args]
-        if not isinstance(func, FunctionValue):
-            raise TypeError(f"{node.func} is not callable")
-        return func.call(args, self)
+    def visit_FunctionCallNode(self, K, node, env):
+        def cont(func):
+            args = [self.execute(lambda v: v, arg, env) for arg in node.args]
+            if not isinstance(func, FunctionValue):
+                raise TypeError(f"{node.func} is not callable")
+            return K(func.call(args, self))
+        return self.execute(lambda v: cont(v), node.func, env)
 
-    def visit_BlockNode(self, node, env):
+    def visit_BlockNode(self, K, node, env):
         result = None
         for stmt in node.statements:
-            result = self.execute(stmt, env)
-        return result
+            result = self.execute(lambda v: v, stmt, env)
+        return K(result)
 
 # [macro]==============================================================
 
@@ -237,7 +245,7 @@ class WhileMacro(Macro):
 interpreter = Interpreter()
 
 # 변수 x = 0
-interpreter.execute(AssignNode("x", LiteralNode(0)))
+interpreter.exec(AssignNode("x", LiteralNode(0)))
 
 # while x < 5: x = x + 1
 while_macro = WhileMacro()
@@ -248,6 +256,6 @@ while_loop = IfNode(
 transformed_loop = while_macro.apply(while_loop)
 
 # 실행
-interpreter.execute(transformed_loop)
+interpreter.exec(transformed_loop)
 
 print(interpreter.global_env.get("x"))  # 5
