@@ -102,12 +102,17 @@ class FunctionValue:
 
 # [interpreter]========================================================
 
+def trampoline(thunk):
+    while callable(thunk):
+        thunk = thunk()
+    return thunk
+
 class Interpreter:
     def __init__(self):
         self.global_env = Environment()
         
     def exec(self, node, env=None):
-        return self.execute(lambda v: v, node, env)
+        return trampoline(self.execute(lambda v: v, node, env))
 
     def execute(self, K, node, env=None):
         if env is None:
@@ -120,10 +125,10 @@ class Interpreter:
         return method(K, node, env)
 
     def visit_LiteralNode(self, K, node, env):
-        return K(node.value)
+        return lambda: K(node.value)
 
     def visit_VarNode(self, K, node, env):
-        return K(env.get(node.name))
+        return lambda: K(env.get(node.name))
 
     def visit_AssignNode(self, K, node, env):
         def cont(value):
@@ -134,7 +139,7 @@ class Interpreter:
             except NameError:
                 env.set(node.name, value)
             return value
-        return self.execute(lambda v: K(cont(v)), node.value, env)
+        return lambda: self.execute(lambda v: K(cont(v)), node.value, env)
 
     def visit_BinaryOpNode(self, K, node, env):
         def cont1(left):
@@ -157,22 +162,22 @@ class Interpreter:
                     return left != right
                 else:
                     raise ValueError(f"Unknown operator: {node.op}")
-            return self.execute(lambda v: K(cont2(v)), node.right, env)
-        return self.execute(cont1, node.left, env)
+            return lambda: self.execute(lambda v: K(cont2(v)), node.right, env)
+        return lambda: self.execute(cont1, node.left, env)
 
     def visit_IfNode(self, K, node, env):
         def cont(cond):
             if cond:
-                return self.execute(K, node.then_body, env)
+                return lambda: self.execute(K, node.then_body, env)
             elif node.else_body:
-                return self.execute(K, node.else_body, env)
+                return lambda: self.execute(K, node.else_body, env)
             return None
-        return self.execute(cont, node.cond, env)
+        return lambda: self.execute(cont, node.cond, env)
 
     def visit_FunctionNode(self, K, node, env):
         func = FunctionValue(node, env)
         env.set(node.name, func)
-        return K(func)
+        return lambda: K(func)
 
     def visit_FunctionCallNode(self, K, node, env):
         def after_func(func_value):
@@ -184,19 +189,19 @@ class Interpreter:
                 else:
                     first, *rest = args
                     c = lambda arg_value: eval_args(rest, acc + [arg_value])
-                    return self.execute(c, first, env)
-            return eval_args(node.args, [])
-        return self.execute(after_func, node.func, env)
+                    return lambda: self.execute(c, first, env)
+            return lambda: eval_args(node.args, [])
+        return lambda: self.execute(after_func, node.func, env)
 
 
     def visit_BlockNode(self, K, node, env):
         def loop(stmts, res):
             if not stmts:
-                return K(res)
+                return lambda: K(res)
             else:
                 first, *rest = stmts
-                return self.execute(lambda v: loop(rest, v), first, env)
-        return loop(node.statements, None)
+                return lambda: self.execute(lambda v: loop(rest, v), first, env)
+        return lambda: loop(node.statements, None)
 
 # [macro]==============================================================
 
