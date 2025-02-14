@@ -175,18 +175,28 @@ class Interpreter:
         return K(func)
 
     def visit_FunctionCallNode(self, K, node, env):
-        def cont(func):
-            args = [self.execute(lambda v: v, arg, env) for arg in node.args]
-            if not isinstance(func, FunctionValue):
-                raise TypeError(f"{node.func} is not callable")
-            return K(func.call(args, self))
-        return self.execute(lambda v: cont(v), node.func, env)
+        def after_func(func_value):
+            def eval_args(args, acc):
+                if not args:
+                    if not isinstance(func_value, FunctionValue):
+                        raise TypeError(f"{node.func} is not callable")
+                    return K(func_value.call(acc, self))
+                else:
+                    first, *rest = args
+                    c = lambda arg_value: eval_args(rest, acc + [arg_value])
+                    return self.execute(c, first, env)
+            return eval_args(node.args, [])
+        return self.execute(after_func, node.func, env)
+
 
     def visit_BlockNode(self, K, node, env):
-        result = None
-        for stmt in node.statements:
-            result = self.execute(lambda v: v, stmt, env)
-        return K(result)
+        def loop(stmts, res):
+            if not stmts:
+                return K(res)
+            else:
+                first, *rest = stmts
+                return self.execute(lambda v: loop(rest, v), first, env)
+        return loop(node.statements, None)
 
 # [macro]==============================================================
 
