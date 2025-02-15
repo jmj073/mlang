@@ -258,20 +258,21 @@ class WhileMacro(Macro):
 
 # [examples]===========================================================
 
-interpreter = Interpreter()
+if __name__ == '__main__':
+    interpreter = Interpreter()
 
-# 변수 x = 0
-interpreter.exec(AssignNode("x", LiteralNode(0)))
+    # 변수 x = 0
+    interpreter.exec(AssignNode("x", LiteralNode(0)))
 
-# while x < 5: x = x + 1
-while_macro = WhileMacro()
-while_loop = IfNode(
-    BinaryOpNode("<", VarNode("x"), LiteralNode(5)),
-    AssignNode("x", BinaryOpNode("+", VarNode("x"), LiteralNode(1)))
-)
-transformed_loop = while_macro.apply(while_loop)
+    # while x < 5: x = x + 1
+    while_macro = WhileMacro()
+    while_loop = IfNode(
+        BinaryOpNode("<", VarNode("x"), LiteralNode(5)),
+        AssignNode("x", BinaryOpNode("+", VarNode("x"), LiteralNode(1)))
+    )
+    transformed_loop = while_macro.apply(while_loop)
 
-# 실행
-interpreter.exec(transformed_loop)
+    # 실행
+    interpreter.exec(transformed_loop)
 
-print(interpreter.global_env.get("x"))  # 5
+    print(interpreter.global_env.get("x"))  # 5
