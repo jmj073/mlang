@@ -141,28 +141,29 @@ class Interpreter:
             return value
         return lambda: self.execute(lambda v: K(cont(v)), node.value, env)
 
+    def __evaluate_binary_op(self, op, left, right):
+        if op == "+":
+            return left + right
+        elif op == "-":
+            return left - right
+        elif op == "*":
+            return left * right
+        elif op == "/":
+            return left / right
+        elif op == "<":
+            return left < right
+        elif op == ">":
+            return left > right
+        elif op == "==":
+            return left == right
+        elif op == "!=":
+            return left != right
+        else:
+            raise ValueError(f"Unknown operator: {node.op}")
+
     def visit_BinaryOpNode(self, K, node, env):
         def cont1(left):
-            def cont2(right):
-                if node.op == "+":
-                    return left + right
-                elif node.op == "-":
-                    return left - right
-                elif node.op == "*":
-                    return left * right
-                elif node.op == "/":
-                    return left / right
-                elif node.op == "<":
-                    return left < right
-                elif node.op == ">":
-                    return left > right
-                elif node.op == "==":
-                    return left == right
-                elif node.op == "!=":
-                    return left != right
-                else:
-                    raise ValueError(f"Unknown operator: {node.op}")
-            return lambda: self.execute(lambda v: K(cont2(v)), node.right, env)
+            return lambda: self.execute(lambda right: K(self.__evaluate_binary_op(node.op, left, right)), node.right, env)
         return lambda: self.execute(cont1, node.left, env)
 
     def visit_IfNode(self, K, node, env):
